@@ -1,6 +1,5 @@
 ---
 title: "Hands-On Machine Learning with Scikit-Learn, Keras, and Tensorflow"
-format: html
 ---
 ## Chapter 2 - End-to-end Machine Learning Project
 
