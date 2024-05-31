@@ -1,0 +1,381 @@
+---
+title: "Hands-On Machine Learning with Scikit-Learn, Keras, and Tensorflow"
+format: html
+---
+## Chapter 2 - End-to-end Machine Learning Project
+
+### Setup
+
+Load packages
+```{python}
+#| label: load-packages
+import os
+from pathlib import Path
+import tarfile
+import urllib.request
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
+```
+
+#### Visuals
+Code to save and format figures as high-res PNGs
+
+```{python}
+#| label: plot-setup
+IMAGES_PATH = Path() / "images" / "end_to_end_project"
+IMAGES_PATH.mkdir(parents=True, exist_ok=True)
+
+def save_fig(fig_id, tight_layout=True, fig_extension="png", resolution=300):
+    path = IMAGES_PATH / f"{fig_id}.{fig_extension}"
+    if tight_layout:
+        plt.tight_layout()
+    plt.savefig(path, format=fig_extension, dpi=resolution)
+
+
+# matplotlib settings
+plt.rc("font", size=14)
+plt.rc("axes", labelsize=14, titlesize=14)
+plt.rc("legend", fontsize=14)
+plt.rc("xtick", labelsize=10)
+plt.rc("ytick", labelsize=10)
+```
+
+
+#### Seeds
+Set seed for reproducbility
+```{python}
+#| label: set-seed
+RANDOM_SEED = 42
+np.random.seed(RANDOM_SEED) # set seed for reproducibility
+```
+
+Additionally, you must set the environment variable `PYTHONHASHSEED` to `"0"` *before* python starts.
+
+
+### Data
+Extract and load housing data
+```{python}
+#| label: load-housing-data
+def extract_housing_data():
+    tarball_path = Path("datasets/housing.tgz")
+    if not tarball_path.is_file():
+        Path("datasets").mkdir(parents=True, exist_ok=True) # create new dir if does not exist
+        url = "https://github.com/ageron/data/raw/main/housing.tgz"
+        urllib.request.urlretrieve(url, tarball_path)
+        with tarfile.open(tarball_path) as housing_tarball:
+            housing_tarball.extractall(path = "datasets")
+
+
+def load_housing_data():
+    housing_csv_path = Path("datasets/housing/housing.csv")
+    if not housing_csv_path.is_file():
+        extract_housing_data()
+    return pd.read_csv(housing_csv_path)
+
+
+housing = load_housing_data()
+```
+
+View housing data structure
+
+```{python}
+#| label: view-housing-head
+housing.head()
+```
+
+
+```{python}
+#| label: view-housing-info
+housing.info()
+```
+
+
+```{python}
+#| label: view-housing-describe
+housing.describe()
+```
+
+```{python}
+#| label: view-housing-hist
+housing.hist(bins=50, figsize=(12,8))
+plt.show()
+```
+
+### Create test set
+
+#### Random Sample
+
+```{python}
+#| label: shuffle-split-function
+def shuffle_and_splt_data(data, test_ratio):
+    shuffled_indices = np.random.permutation(len(data))
+    test_set_size = int(len(data) * test_ratio) # number of rows in test data, rounded to nearest integer
+    test_indices = shuffled_indices[:test_set_size]
+    train_indices = shuffled_indices[test_set_size:]
+    return data.iloc[train_indices], data.iloc[test_indices]
+
+
+# Split into training and test set with sizes 80% and 20%,respectively
+train_set, test_set = shuffle_and_splt_data(housing, 0.2)
+```
+
+Verify training data size
+```{python}
+#| label: verify-training-set-shuffle
+len(train_set) / len(housing)
+```
+
+Verify test data size
+```{python}
+#| label: verify-test-set-shuffle
+len(test_set) / len(housing)
+```
+
+Additionally you can use `sklearn` to create train and test split, supplying the random seed as an argument
+
+```{python}
+#| label: test-train-split-scikit
+train_set, test_set = train_test_split(housing, test_size=0.2, random_state=RANDOM_SEED)
+```
+
+Verify training data size
+```{python}
+#| label: verify-train-set-scikit
+len(train_set) / len(housing)
+```
+
+Verify test data size
+```{python}
+#| label: verify-test-set-scikit
+len(test_set) / len(housing)
+```
+
+In order to ensure consistent entries in test set across data refreshes, you will need to store the indexes that are in the test set.
+
+#### Stratified Sample
+Sometimes you will want to perform a train/test split using a stratified sample. Here's a stratified train/test split using income buckets as our strata.
+```{python}
+#| label: show-housing-median-income
+housing["median_income"].describe()
+```
+
+Create income bucket column in dataframe
+```{python}
+#| label: housing-income-bucket
+housing["income_bucket"] = pd.cut(
+    housing["median_income"],
+    bins=[0.0, 1.5, 3.0, 4.5, 6.0, np.inf],
+    labels=[1, 2, 3, 4, 5],
+)
+
+housing["income_bucket"].value_counts().sort_index().plot.bar(
+    rot=0, # rotates x-axis labels
+    grid=True # add gridlines
+)
+plt.xlabel("Income Bucket")
+plt.ylabel("Number of districts")
+plt.show()
+```
+
+Use sklearn to perform a stratified train/test split 10 times
+```{python}
+#| label: stratified-test-train-split
+splitter = StratifiedShuffleSplit(n_splits=10, test_size = 0.2, random_state=RANDOM_SEED)
+stratified_splits = []
+stratified_split_indices = splitter.split(housing, housing["income_bucket"])
+for train_index, test_index in stratified_split_indices:
+    stratified_train_set_idx = housing.iloc[train_index]
+    stratified_test_set_idx = housing.iloc[test_index]
+    stratified_splits.append([stratified_train_set_idx, stratified_test_set_idx])
+```
+
+If you wish to use a single straified test/train split, you can simply use `train_test_split()`
+
+```{python}
+#| label: stratified-test-train-split-scikit
+strat_train_set, strat_test_set = train_test_split(
+    housing,
+    test_size=0.2,
+    stratify=housing["income_bucket"],
+    random_state=RANDOM_SEED,
+)
+```
+
+Certify the straification resulted in a more balanced test set for income:
+```{python}
+#| label: stratified-test-train-split-verification
+def income_bucket_proportions(data):
+    return data["income_bucket"].value_counts() / len(data)
+
+train_set, test_set = train_test_split(
+    housing,
+    test_size=0.2,
+    random_state=RANDOM_SEED
+)
+proportion_comparison = pd.DataFrame({
+    "Overall %": income_bucket_proportions(housing),
+    "Stratified %": income_bucket_proportions(strat_test_set),
+    "Random %": income_bucket_proportions(test_set),
+})
+proportion_comparison.index.name = "Income Bucket"
+proportion_comparison["Stratified Error %"] = proportion_comparison["Stratified %"] / proportion_comparison["Overall %"] - 1
+proportion_comparison["Random Error %"] = proportion_comparison["Random %"] / proportion_comparison["Overall %"] - 1
+
+(proportion_comparison * 100).round(2)
+```
+
+### EDA
+
+#### Data Visualization
+Creating a scatter plot of the latitudes and longitudes tells us where these district are located in relation to one another.
+```{python}
+#| label: lat-long-scatterplot
+housing.plot("longitude", "latitude", "scatter")
+plt.show()
+```
+
+We observe that our data spans California. Applying an alpha to the plot will better show the districts' density.
+
+```{python}
+#| label: scatterplot-with-alpha
+housing.plot("longitude", "latitude", "scatter", alpha=0.2)
+plt.show()
+```
+
+Additionally, we can plot these points and add layers for population and median housing price
+```{python}
+#| label: scatterplot-with-layers
+housing.plot(
+    kind="scatter",
+    x="longitude",
+    y="latitude",
+    grid=True,
+    s=housing["population"] / 100, # size of points
+    c="median_house_value", # color of points
+    cmap="viridis", # colormap to use for color layer
+    colorbar=True,
+    alpha=0.5,
+    legend=True,
+    figsize=(10,7)
+)
+plt.show()
+```
+
+This we are using location data, we can plot this on a map image
+
+```{python}
+#| label: scatterplot-on-map-image
+filename = "california.png"
+if not (IMAGES_PATH / filename).is_file():
+    img_url_root = "https://github.com/ageron/handson-ml3/raw/main/"
+    img_url = img_url_root + "images/end_to_end_project/" + filename
+    urllib.request.urlretrieve(img_url, IMAGES_PATH / filename)
+housing.plot(
+    kind="scatter",
+    x="longitude",
+    y="latitude",
+    grid=False,
+    s=housing["population"] / 100, # size of points
+    c="median_house_value", # color of points
+    cmap="viridis", # colormap to use for color layer
+    colorbar=True,
+    alpha=0.5,
+    legend=True,
+    figsize=(10,7)
+)
+axis_limits = -124.55, -113.95, 32.45, 42.05
+plt.axis(axis_limits)
+california_img = plt.imread(IMAGES_PATH / filename)
+plt.imshow(california_img, extent=axis_limits)
+plt.show()
+```
+
+#### Correlation
+
+We can return a correlation matrix and look at correlations for our target variable.
+```{python}
+#| label: pandas-correlation-matrix
+corr_matrix = housing.corr(numeric_only=True)
+corr_matrix["median_house_value"].sort_values(ascending=False)
+```
+
+Also, pandas comes with the ability to create scatter plots for all variables of interest.
+
+We observe strong correlations among variables concerning house size, number, and count of rooms. We observe weak correlation between housing_median_age and the other variables
+```{python}
+#| label: pandas-scatterplot-matrix
+scatter_columns = ["housing_median_age", "total_rooms", "total_bedrooms", "population", "households", "median_income", "median_house_value", "ocean_proximity"]
+pd.plotting.scatter_matrix(housing[scatter_columns], figsize=(12, 8))
+plt.show()
+```
+
+### Feature Engineering
+We can combine columns into new columns for interaction effects.
+
+```{python}
+#| label: create-new-features
+housing["rooms_per_house"] = housing["total_rooms"] / housing["households"]
+housing["bedrooms_ratio"] = housing["total_bedrooms"] / housing["total_rooms"]
+housing["people_per_house"] = housing["population"] / housing["households"]
+```
+
+When we re-run the correlation matrix, we observe that the derived columns can provide bettwe correlations to the target variable
+
+```{python}
+#| label: new-feature-correlation
+corr_matrix = housing.corr(numeric_only=True)
+corr_matrix["median_house_value"].sort_values(ascending=False)
+```
+
+### Data Prep
+Functions are the preferred way to clean data for ML. Functionalizi8ng the data cleaning process allows you to reproduce your results easily and apply the same cleaning across different projects.
+
+#### Clean training data and labels
+First, we want to remove the target variable from our training set and store it in its own object.
+
+```{python}
+#| label: training-feature-label-split
+TARGET_VARIABLE = "median_house_value"
+housing = strat_train_set.drop(TARGET_VARIABLE, axis=1) # drops column
+housing_labels = strat_test_set[TARGET_VARIABLE].copy()
+```
+
+#### Handle Missing Data
+TO handle missing data, there are three options:
+- Remove the rows with missing values (`pd.DataFrame.dropna()`)
+- Remove attributes with missingness (`pd.DataFrame.drop()`)
+- Impute the missing values
+
+Imputation is generally preferred, so as to avoid losing information. We can use scikit-learn for imputation
+
+```{python}
+#| label: scikit-simple-imputation
+# available strategies: 'mean', 'median', 'most_frequent', 'constant' (using provided 'fill_value'), or Callable
+imputer = SimpleImputer(strategy="median")
+housing_numeric_columns = housing.select_dtypes(include=[np.number])
+imputer.fit(housing_numeric_columns)
+```
+
+The imputer calcualtes the specified statistics and stores them in the `statistics_` attribute.
+```{python}
+#| label: imputed-statistics
+imputer.statistics_
+```
+
+```{python}
+#| label: manually-calculated-statistics
+housing_numeric_columns.median().values
+```
+
+To apply the "fitted" imputer to the data, use the `transform` method.
+
+```{python}
+#| label: fit-imputer-to-data
+X = imputer.transform(housing_numeric_columns)
+```
+
+#### Handle Text and Categorical Data
