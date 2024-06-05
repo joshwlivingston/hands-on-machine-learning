@@ -1,3 +1,7 @@
 project:
   type: website
   output-dir: docs
+
+toc: true
+toc-depth: 4
+toc-expand: 4
